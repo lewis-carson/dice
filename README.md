@@ -1,36 +1,83 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# 3D Dice Roller
+
+A physics-based 3D dice rolling application built with React, Three.js, and React Three Fiber. Roll virtual dice with realistic physics and animations.
+
+## Features
+
+- 🎲 Realistic 3D dice with physics-based rolling
+- 🔢 Adjustable dice count (1-9 dice)
+- 📱 Responsive design works on desktop and mobile
+- 🎯 Accurate dice face detection
+- 🎬 Smooth animations and transitions
+- 📊 Real-time result tracking with sum calculation
+
+## Technologies Used
+
+- [Next.js](https://nextjs.org/) - React framework
+- [Three.js](https://threejs.org/) - 3D graphics library
+- [@react-three/fiber](https://github.com/pmndrs/react-three-fiber) - React renderer for Three.js
+- [@react-three/rapier](https://github.com/pmndrs/react-three-rapier) - Physics engine
+- [Tailwind CSS](https://tailwindcss.com/) - Styling
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
 
+- Node.js 14.x or higher
+- npm or yarn
+
+### Installation
+
+1. Clone the repository:
+```bash
+git clone https://github.com/lewiscarson/dice-roller.git
+cd dice-roller
+```
+
+2. Install dependencies:
+```bash
+npm install
+# or
+yarn install
+```
+
+3. Start the development server:
 ```bash
 npm run dev
 # or
 yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+4. Open [http://localhost:3000](http://localhost:3000) in your browser to see the application.
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+## Usage
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- Use the slider to select the number of dice you want to roll (1-9)
+- Click the "Roll All Dice" button to roll the dice
+- The current values and sum of all dice will be displayed below
+- Green numbers indicate settled dice, while gray numbers are still in motion
 
-## Learn More
+## How It Works
 
-To learn more about Next.js, take a look at the following resources:
+The application uses a combination of Three.js for rendering and Rapier physics engine to simulate realistic dice rolls. Each die is a 3D cube with rounded corners that responds to gravity and collisions. The application detects which face is up when the dice settle to determine the roll result.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Performance Considerations
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+The app is optimized for performance with:
+- Efficient physics calculations
+- On-demand rendering
+- Proper memory management
+- Adaptive quality based on device capabilities
 
-## Deploy on Vercel
+## Contributing
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Acknowledgments
+
+- React Three Fiber team for making Three.js accessible in React
+- Three.js community for the incredible 3D graphics library
