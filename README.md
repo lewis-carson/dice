@@ -2,6 +2,8 @@
 
 A physics-based 3D dice rolling application built with React, Three.js, and React Three Fiber. Roll virtual dice with realistic physics and animations.
 
+Demo: https://dice.lewiscarson.co.uk
+
 ## Features
 
 - 🎲 Realistic 3D dice with physics-based rolling
