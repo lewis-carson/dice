@@ -30,8 +30,8 @@ A physics-based 3D dice rolling application built with React, Three.js, and Reac
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/lewiscarson/dice-roller.git
-cd dice-roller
+git clone https://github.com/lewiscarson/dice.git
+cd dice
 ```
 
 2. Install dependencies:
