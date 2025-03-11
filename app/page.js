@@ -6,24 +6,25 @@ import { Physics, RigidBody } from '@react-three/rapier';
 import { Euler, Quaternion, Vector3 } from 'three';
 import { RoundedBoxGeometry } from 'three-stdlib';
 import * as THREE from 'three';
+import React from 'react';
 extend({ RoundedBoxGeometry });
 
 // Camera constants
 const CAMERA_CONSTANTS = {
-  DEFAULT_ZOOM: 8,
-  FOCUSED_ZOOM: 8,
-  SMOOTHNESS: 0.8,
+  DEFAULT_ZOOM: 6,
+  FOCUSED_ZOOM: 6,
+  SMOOTHNESS: 0.3,
   POSITION_Y: 10,
 };
 
 // Dice throw physics constants
 const DICE_PHYSICS = {
   INITIAL_HEIGHT: 1,
-  POSITION_SPREAD: 2,  // Multiplied by (Math.random() - 0.5)
-  LINEAR_VELOCITY: 20, // Multiplied by (Math.random() - 0.5) for x and z
-  ANGULAR_VELOCITY: 30, // Multiplied by (Math.random() - 0.5)
+  POSITION_SPREAD: 0,  // Multiplied by (Math.random() - 0.5)
+  LINEAR_VELOCITY: 10, // Multiplied by (Math.random() - 0.5) for x and z
+  ANGULAR_VELOCITY: 40, // Multiplied by (Math.random() - 0.5)
   GRAVITY_SCALE: 3,
-  RESTITUTION: 0.3,
+  RESTITUTION: 0.5,
   FRICTION: 5,
 };
 
@@ -31,15 +32,15 @@ const DICE_PHYSICS = {
 const DICE_APPEARANCE = {
   SIZE: 1,
   CORNER_RADIUS: 0.1,
-  CORNER_SEGMENTS: 4,
+  CORNER_SEGMENTS: 2,
 };
 
 // Animation constants
 const ANIMATION = {
-  FADE_IN_DURATION: 0.2, // seconds for the dice to fade in
-  FADE_IN_DELAY: 0.1,    // seconds to wait before starting the fade
+  FADE_IN_DURATION: 0, // seconds for the dice to fade in
+  FADE_IN_DELAY: 0,    // seconds to wait before starting the fade
   INITIAL_OPACITY: 0,    // starting opacity
-  FADE_OUT_DURATION: 0.1, // seconds for the dice to fade out when rolling again
+  FADE_OUT_DURATION: 0, // seconds for the dice to fade out when rolling again
 };
 
 // Texture constants
@@ -50,18 +51,26 @@ const TEXTURE_CONSTANTS = {
   PIP_COLOR: '#000000'
 };
 
-// Canvas dimensions - adjusted for tiled layout
+// Canvas dimensions - adjusted for staggered layout
 const CANVAS_DIMENSIONS = {
   WIDTH: 200, // Smaller width for tiled layout
   HEIGHT: 150, // Smaller height for tiled layout
-  MAX_DICE: 9, // Maximum number of dice
+  MAX_DICE: 5, // Maximum number of dice
   DEFAULT_DICE: 2, // Default number of dice
+  OVERLAP: 30, // Amount of overlap between dice in pixels
+  ROW_PATTERN: [3, 2, 3, 1], // Pattern for dice per row (3,2,3,1)
 };
 
 // Performance constants - adding FPS-related settings
 const PERFORMANCE = {
-  PHYSICS_TIME_STEP: 1 / 120, // Increase physics simulation rate from 1/60 to 1/120
-  PHYSICS_ITERATIONS: 3,      // Increase solver iterations for better precision
+  PHYSICS_TIME_STEP: 1 / 80, // Increase physics simulation rate from 1/60 to 1/120
+  PHYSICS_ITERATIONS: 2,      // Increase solver iterations for better precision
+};
+
+// Adding button animation constants
+const BUTTON_ANIMATION = {
+  SCALE_DOWN: 0.95,  // Button scales to 95% when clicked
+  TRANSITION: '0.1s', // Animation duration
 };
 
 // Add a viewport adjuster component to handle DPI properly
@@ -82,20 +91,94 @@ function ViewportAdjuster() {
   return null;
 }
 
+// Update histogram constants to use more muted colors
+const HISTOGRAM = {
+  HEIGHT: 120,         // Reduced height
+  HIGHLIGHT_COLOR: '#A78BFA', // More muted highlight color
+  IDEAL_COLOR: '#E5E7EB', // Very muted base color for bars
+  BAR_SPACING: 3,      // Slightly reduced spacing
+  PROVISIONAL_COLOR: '#D8B4FE', // Lighter purple for provisional values
+  REROLL_COLOR: '#9333EA', // Color for reroll distribution
+};
+
 // DiceGrid component to manage multiple dice instances
 function DiceGrid() {
   const [diceCount, setDiceCount] = useState(CANVAS_DIMENSIONS.DEFAULT_DICE);
   const [isRolling, setIsRolling] = useState(false);
   const [diceResults, setDiceResults] = useState([]);
   const [diceSettled, setDiceSettled] = useState([]);
+  const [rerollIndices, setRerollIndices] = useState([]); // New state for tracking specific dice to re-roll
+  // Add button animation states
+  const [rollButtonPressed, setRollButtonPressed] = useState(false);
+  const [rerollButtonPressed, setRerollButtonPressed] = useState(false);
+  // Replace sumHistory with just the last roll
+  const [lastRollSum, setLastRollSum] = useState(null);
+  // Add state for provisional sum while dice are settling
+  const [provisionalSum, setProvisionalSum] = useState(null);
+  // Add state to track if we're in reroll mode
+  const [isRerolling, setIsRerolling] = useState(false);
+  // Track which die value is being rerolled
+  const [rerolledValue, setRerolledValue] = useState(null);
   
   const rollAllDice = () => {
     setIsRolling(true);
     setDiceResults([]); // Reset results when rolling
     setDiceSettled(Array(diceCount).fill(false)); // Reset settled state
+    setRerollIndices([]); // Clear any previous re-roll indices
+    setIsRerolling(false); // Exit reroll mode
+    setRerolledValue(null); // Clear rerolled value
     // Reset rolling state after a brief delay to enable subsequent rolls
     setTimeout(() => {
       setIsRolling(false);
+    }, 100);
+  };
+
+  // Modified function to re-roll only one die with the lowest value
+  const rerollLowestDice = () => {
+    // Only proceed if at least one die has settled
+    if (diceResults.filter(r => r !== undefined && r !== null).length === 0) {
+      return; // No dice have values yet
+    }
+
+    // Find the minimum value among settled dice
+    const validResults = diceResults.map((value, index) => ({
+      value: value || Infinity, // Use Infinity for unsettled dice
+      index
+    })).filter(item => item.value !== Infinity);
+
+    if (validResults.length === 0) return; // No settled dice
+
+    const minValue = Math.min(...validResults.map(item => item.value));
+    
+    // Find the first die with the minimum value (only re-roll one)
+    const dieToReroll = validResults.find(item => item.value === minValue);
+    
+    if (!dieToReroll) return; // Shouldn't happen but just in case
+    
+    // Set reroll mode and store the value being rerolled
+    setIsRerolling(true);
+    setRerolledValue(minValue);
+    
+    // Only re-roll this single die
+    setRerollIndices([dieToReroll.index]);
+    
+    // Reset settled state for this die
+    setDiceSettled(prev => {
+      const newSettled = [...prev];
+      newSettled[dieToReroll.index] = false;
+      return newSettled;
+    });
+    
+    // Clear result for this die
+    setDiceResults(prev => {
+      const newResults = [...prev];
+      newResults[dieToReroll.index] = null;
+      return newResults;
+    });
+    
+    // Reset re-roll indices after a brief delay to enable triggering the dice
+    setTimeout(() => {
+      setRerollIndices([]);
     }, 100);
   };
 
@@ -121,6 +204,13 @@ function DiceGrid() {
         return newSettled;
       });
     }
+    
+    // Calculate provisional sum from latest results
+    // This runs whenever any die updates its value
+    setTimeout(() => {
+      const currentTotal = diceResults.reduce((sum, value) => sum + (value || 0), 0);
+      setProvisionalSum(currentTotal > 0 ? currentTotal : null);
+    }, 0);
   };
   
   // Calculate total of all dice
@@ -128,6 +218,92 @@ function DiceGrid() {
   
   // Count how many dice are settled
   const settledCount = diceSettled.filter(Boolean).length;
+  
+  // Track when all dice are settled and update last roll
+  useEffect(() => {
+    // Only update the last roll when all dice are settled and we have a valid total
+    if (
+      settledCount === diceCount && 
+      diceCount > 0 && 
+      totalValue > 0 && 
+      !isRolling
+    ) {
+      setLastRollSum(totalValue);
+      setProvisionalSum(null); // Clear provisional sum when all dice are settled
+      
+      // Exit reroll mode when all dice are settled
+      if (isRerolling && settledCount === diceCount) {
+        setIsRerolling(false);
+        setRerolledValue(null);
+      }
+    }
+  }, [settledCount, diceCount, totalValue, isRolling]);
+  
+  // Helper function to calculate dice position based on index
+  const getDicePosition = (index) => {
+    // Calculate which row and column this die belongs to
+    let row = 0;
+    let diceInPreviousRows = 0;
+    
+    // Find which row this die belongs to
+    while (true) {
+      const diceInRow = CANVAS_DIMENSIONS.ROW_PATTERN[row % CANVAS_DIMENSIONS.ROW_PATTERN.length];
+      if (index < diceInPreviousRows + diceInRow) {
+        break;
+      }
+      diceInPreviousRows += diceInRow;
+      row++;
+    }
+    
+    // Calculate position within that row
+    const col = index - diceInPreviousRows;
+    
+    // Get dice count for this row
+    const diceInRow = CANVAS_DIMENSIONS.ROW_PATTERN[row % CANVAS_DIMENSIONS.ROW_PATTERN.length];
+    
+    // Calculate actual dimensions of dice elements
+    const dieWidth = CANVAS_DIMENSIONS.WIDTH;
+    const dieHeight = CANVAS_DIMENSIONS.HEIGHT;
+    const containerWidth = 650; // Container width in px
+    
+    // Calculate effective width accounting for overlapping dice
+    const effectiveWidth = dieWidth - CANVAS_DIMENSIONS.OVERLAP;
+    
+    // Calculate total width needed for this row
+    const rowWidth = diceInRow * effectiveWidth + CANVAS_DIMENSIONS.OVERLAP; // Add back one overlap for the last die
+    
+    // Center the row within the container
+    const rowStartX = (containerWidth - rowWidth) / 2;
+    
+    // Calculate vertical spacing with adjusted offset to center dice
+    const totalRows = calculateRowsNeeded(diceCount);
+    const totalRowHeight = totalRows * (dieHeight - CANVAS_DIMENSIONS.OVERLAP / 2);
+    const containerHeight = totalRows * (dieHeight - CANVAS_DIMENSIONS.OVERLAP / 2) + 50;
+    
+    // Use a smaller or negative value to move dice down (was 20)
+    const verticalAdjustment = 7; // Set to 0 for perfect centering or negative to move down
+    const verticalOffset = (containerHeight - totalRowHeight) / 2 - verticalAdjustment;
+    
+    // Calculate exact position for this die
+    return {
+      left: rowStartX + col * effectiveWidth,
+      top: verticalOffset + row * (dieHeight - CANVAS_DIMENSIONS.OVERLAP / 2)
+    };
+  };
+  
+  // Helper function to calculate actual number of rows needed based on dice count
+  const calculateRowsNeeded = (count) => {
+    let remainingDice = count;
+    let rowIndex = 0;
+    
+    while (remainingDice > 0) {
+      const diceInRow = CANVAS_DIMENSIONS.ROW_PATTERN[rowIndex % CANVAS_DIMENSIONS.ROW_PATTERN.length];
+      remainingDice -= diceInRow;
+      rowIndex++;
+    }
+    
+    return rowIndex;
+  };
   
   return (
     <div className="flex flex-col items-center justify-center">
@@ -140,58 +316,299 @@ function DiceGrid() {
           max={CANVAS_DIMENSIONS.MAX_DICE}
           value={diceCount}
           onChange={(e) => setDiceCount(parseInt(e.target.value))}
-          className="w-full"
+          className="w-full cursor-pointer"
         />
       </div>
       
-      <button 
-        className="px-4 py-2 bg-blue-500 text-white rounded mb-4" 
-        onClick={rollAllDice}
-        disabled={isRolling}
-      >
-        Roll All Dice
-      </button>
+      <div className="flex space-x-4 mb-4">
+        <button 
+          className="px-4 py-2 bg-blue-500 text-white rounded transition-transform hover:bg-blue-600 active:bg-blue-700" 
+          onClick={rollAllDice}
+          disabled={isRolling}
+          style={{
+            transform: rollButtonPressed ? `scale(${BUTTON_ANIMATION.SCALE_DOWN})` : 'scale(1)',
+            transition: BUTTON_ANIMATION.TRANSITION,
+            cursor: isRolling ? 'not-allowed' : 'pointer'
+          }}
+          onMouseDown={() => setRollButtonPressed(true)}
+          onMouseUp={() => setRollButtonPressed(false)}
+          onMouseLeave={() => setRollButtonPressed(false)}
+        >
+          Roll All Dice
+        </button>
+        
+        <button 
+          className="px-4 py-2 bg-green-500 text-white rounded transition-transform hover:bg-green-600 active:bg-green-700" 
+          onClick={rerollLowestDice}
+          disabled={isRolling || diceSettled.filter(Boolean).length < 1}
+          style={{
+            transform: rerollButtonPressed ? `scale(${BUTTON_ANIMATION.SCALE_DOWN})` : 'scale(1)',
+            transition: BUTTON_ANIMATION.TRANSITION,
+            cursor: (isRolling || diceSettled.filter(Boolean).length < 1) ? 'not-allowed' : 'pointer'
+          }}
+          onMouseDown={() => setRerollButtonPressed(true)}
+          onMouseUp={() => setRerollButtonPressed(false)}
+          onMouseLeave={() => setRerollButtonPressed(false)}
+        >
+          Re-roll Lowest Die
+        </button>
+      </div>
       
-      <div className="flex flex-wrap justify-center border border-solid border-gray-300 rounded-lg p-2 mb-4" style={{ maxWidth: '650px' }}>
-        {Array.from({ length: diceCount }, (_, index) => (
-          <SingleDie 
-            key={index} 
-            rollTrigger={isRolling} 
-            dieIndex={index}
-            onDiceUpdate={(result, isSettled) => handleDiceUpdate(index, result, isSettled)}
-          />
-        ))}
+      <div className="border border-solid border-gray-300 rounded-lg mb-4 relative" 
+           style={{ 
+             width: '650px',
+             height: `${calculateRowsNeeded(diceCount) * 
+                      (CANVAS_DIMENSIONS.HEIGHT - CANVAS_DIMENSIONS.OVERLAP / 2) + 50}px`
+           }}>
+        {Array.from({ length: diceCount }, (_, index) => {
+          const position = getDicePosition(index);
+          
+          return (
+            <div 
+              key={index}
+              style={{
+                position: 'absolute',
+                left: `${position.left}px`,
+                top: `${position.top}px`,
+                zIndex: isRolling ? index : (diceSettled[index] ? index * 2 : index)
+              }}
+            >
+              <SingleDie 
+                rollTrigger={isRolling} 
+                rerollTrigger={rerollIndices.includes(index)} // Pass re-roll trigger
+                dieIndex={index}
+                onDiceUpdate={(result, isSettled) => handleDiceUpdate(index, result, isSettled)}
+              />
+            </div>
+          );
+        })}
       </div>
       
       {/* Results display - moved to the bottom */}
-        <div className="text-center">
-          <p className="font-bold">
-            {diceResults.map((r, i) => (
-              <>
-              <span key={i} className={diceSettled[i] ? "text-green-600" : "text-gray-600"}>
+      <div className="text-center mb-6">
+        <p className="font-bold">
+          {diceResults.map((r, i) => (
+            <React.Fragment key={i}>
+              <span className={diceSettled[i] ? "text-green-600" : "text-gray-600"}>
                 {r || '?'}
               </span>
               <span>
                 {i < diceResults.length - 1 ? ' + ' : ''}
               </span>
-              </>
-            ))} = {totalValue}
-          </p>
-          <p className="text-sm mt-1">{settledCount}/{diceCount} dice settled</p>
-        </div>
+            </React.Fragment>
+          ))} = {totalValue}
+        </p>
+        <p className="text-sm mt-1">{settledCount}/{diceCount} dice settled</p>
+      </div>
       
+      {/* New simplified histogram component */}
+      <div className="w-full max-w-2xl mt-6">
+        <IdealDistributionHistogram 
+          diceCount={diceCount} 
+          lastRoll={lastRollSum} 
+          provisionalRoll={provisionalSum}
+          isRerolling={isRerolling}
+          rerolledValue={rerolledValue}
+          currentDiceValues={diceResults.filter(v => v !== null && v !== undefined)}
+        />
+      </div>
     </div>
   );
 }
 
+// New simplified component that only shows ideal distribution and highlights last roll
+function IdealDistributionHistogram({ 
+  diceCount, 
+  lastRoll, 
+  provisionalRoll,
+  isRerolling,
+  rerolledValue,
+  currentDiceValues
+}) {
+  // Calculate min and max possible values based on dice count
+  const minValue = diceCount;
+  const maxValue = diceCount * 6;
+  
+  // Initialize counts for each possible sum
+  const possibleSums = maxValue - minValue + 1;
+  
+  // Calculate the theoretical probability distribution for the given number of dice
+  const theoreticalDistribution = useMemo(() => {
+    // If we're in normal mode, calculate standard distribution
+    if (!isRerolling) {
+      // Create array to store probabilities
+      const distribution = Array(possibleSums).fill(0);
+      
+      if (diceCount === 1) {
+        // For 1 die, all outcomes are equally likely (1/6)
+        distribution.fill(1/6);
+      } else {
+        // For multiple dice, calculate using combinatorial probability
+        // This uses dynamic programming to compute probabilities efficiently
+        
+        // First, create a table to hold intermediate results
+        // ways[d][s] = # of ways to get sum s with d dice
+        const ways = Array(diceCount + 1).fill().map(() => Array(maxValue + 1).fill(0));
+        
+        // With 1 die, there's 1 way to get each face value
+        for (let face = 1; face <= 6; face++) {
+          ways[1][face] = 1;
+        }
+        
+        // Fill in the table for 2+ dice
+        for (let d = 2; d <= diceCount; d++) {
+          for (let s = d; s <= d * 6; s++) {
+            // For each possible value of the current die (1-6)
+            for (let face = 1; face <= 6; face++) {
+              if (s - face >= d - 1) { // Ensure we don't go below minimum possible sum
+                ways[d][s] += ways[d-1][s-face];
+              }
+            }
+          }
+        }
+        
+        // Convert raw counts to probabilities
+        const totalOutcomes = Math.pow(6, diceCount);
+        for (let s = minValue; s <= maxValue; s++) {
+          distribution[s - minValue] = ways[diceCount][s] / totalOutcomes;
+        }
+      }
+      
+      return distribution;
+    } else {
+      // We're rerolling one die, so calculate a skewed distribution
+      return calculateRerollDistribution(
+        diceCount, 
+        currentDiceValues, 
+        rerolledValue, 
+        minValue, 
+        maxValue
+      );
+    }
+  }, [diceCount, minValue, maxValue, possibleSums, isRerolling, currentDiceValues, rerolledValue]);
+  
+  // Find the maximum probability for normalization
+  const maxProbability = Math.max(...theoreticalDistribution);
+  
+  // Calculate bar width based on number of possible outcomes
+  const barWidth = `calc((100% - ${(possibleSums - 1) * HISTOGRAM.BAR_SPACING}px) / ${possibleSums})`;
+  
+  return (
+    <div className="border-t border-gray-200 pt-2 mt-2">
+      {/* Minimal header - shows last roll or provisional roll if available */}
+      <div className="flex justify-between items-center mb-1">
+        <div className="text-xs text-gray-500">
+          {isRerolling && <span>Reroll distribution <span className="text-purple-700">(lowest: {rerolledValue})</span></span>}
+          {!isRerolling && <span>Probability distribution</span>}
+        </div>
+        {(lastRoll || provisionalRoll) && (
+          <div className="text-xs text-gray-500">
+            {lastRoll ? (
+              <span>Last: <span className="text-violet-600 font-medium">{lastRoll}</span></span>
+            ) : provisionalRoll ? (
+              <span>Current: <span className="text-violet-400 font-medium">{provisionalRoll}</span></span>
+            ) : null}
+          </div>
+        )}
+      </div>
+      
+      {/* Histogram bars */}
+      <div className="flex items-end h-[100px]">
+        {theoreticalDistribution.map((probability, index) => {
+          const value = index + minValue;
+          // Scale to use full height
+          const heightPixels = Math.max(Math.round(probability / maxProbability * 90), 1);
+          const isLastRoll = value === lastRoll;
+          const isProvisionalRoll = value === provisionalRoll && !isLastRoll;
+          
+          return (
+            <div 
+              key={index}
+              className="flex flex-col items-center"
+              style={{ 
+                width: barWidth,
+                marginRight: index < possibleSums - 1 ? `${HISTOGRAM.BAR_SPACING}px` : 0
+              }}
+            >
+              {/* The theoretical probability bar */}
+              <div 
+                className={`w-full rounded-t-sm transition-colors duration-200`}
+                style={{ 
+                  height: `${heightPixels}px`,
+                  backgroundColor: isLastRoll 
+                    ? HISTOGRAM.HIGHLIGHT_COLOR 
+                    : isProvisionalRoll 
+                      ? HISTOGRAM.PROVISIONAL_COLOR 
+                      : isRerolling
+                        ? HISTOGRAM.REROLL_COLOR
+                        : HISTOGRAM.IDEAL_COLOR,
+                }}
+              />
+              
+              {/* Minimal label - only the number */}
+              <div className={`text-xs mt-1 ${
+                isLastRoll 
+                  ? 'text-violet-600 font-medium' 
+                  : isProvisionalRoll 
+                    ? 'text-violet-400 font-medium' 
+                    : isRerolling
+                      ? 'text-purple-700'
+                      : 'text-gray-400'
+              }`}>
+                {value}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// Helper function to calculate distribution when rerolling one die
+function calculateRerollDistribution(
+  diceCount, 
+  currentValues, 
+  rerolledValue, 
+  minValue, 
+  maxValue
+) {
+  // Initialize distribution array
+  const possibleSums = maxValue - minValue + 1;
+  const distribution = Array(possibleSums).fill(0);
+  
+  // If we don't have enough information, return flat distribution
+  if (currentValues.length === 0 || rerolledValue === null) {
+    return distribution.fill(1/possibleSums);
+  }
+  
+  // Calculate the sum of dice that we're keeping (all except the one being rerolled)
+  const keptSum = currentValues.reduce((sum, val) => sum + val, 0) - (rerolledValue || 0);
+  
+  // For each possible outcome of the rerolled die (1-6)
+  for (let newValue = 1; newValue <= 6; newValue++) {
+    // Calculate the new total
+    const newSum = keptSum + newValue;
+    
+    // Ensure the sum is within our range
+    if (newSum >= minValue && newSum <= maxValue) {
+      // Add 1/6 probability for this outcome
+      distribution[newSum - minValue] += 1/6;
+    }
+  }
+  
+  return distribution;
+}
+
 // Single die component - converted from original Dice component
-function SingleDie({ rollTrigger, dieIndex, onDiceUpdate }) {
+function SingleDie({ rollTrigger, rerollTrigger, dieIndex, onDiceUpdate }) {
   const [showDice, setShowDice] = useState(false);
   const [dicePosition, setDicePosition] = useState(null);
   const [isRolling, setIsRolling] = useState(false);
   const [shouldFadeOut, setShouldFadeOut] = useState(false);
   const [dpr, setDpr] = useState(1);
   const lastRollTrigger = useRef(rollTrigger);
+  const lastRerollTrigger = useRef(rerollTrigger);
   const [diceResult, setDiceResult] = useState(null);
   const [isSettled, setIsSettled] = useState(false);
   
@@ -201,7 +618,7 @@ function SingleDie({ rollTrigger, dieIndex, onDiceUpdate }) {
     }
   }, []);
   
-  // Detect roll trigger changes
+  // Detect roll trigger changes (for rolling all dice)
   useEffect(() => {
     if (rollTrigger !== lastRollTrigger.current) {
       lastRollTrigger.current = rollTrigger;
@@ -212,6 +629,18 @@ function SingleDie({ rollTrigger, dieIndex, onDiceUpdate }) {
       }
     }
   }, [rollTrigger]);
+  
+  // Detect re-roll trigger changes (for specific dice)
+  useEffect(() => {
+    if (rerollTrigger !== lastRerollTrigger.current) {
+      lastRerollTrigger.current = rerollTrigger;
+      if (rerollTrigger) {
+        rollDice();
+        setDiceResult(null); // Reset result when rolling again
+        setIsSettled(false); // Reset settled state
+      }
+    }
+  }, [rerollTrigger]);
   
   const updateDicePosition = (position) => {
     setDicePosition(position);
@@ -257,7 +686,8 @@ function SingleDie({ rollTrigger, dieIndex, onDiceUpdate }) {
         dpr={dpr}
         style={{ 
           width: CANVAS_DIMENSIONS.WIDTH, 
-          height: CANVAS_DIMENSIONS.HEIGHT 
+          height: CANVAS_DIMENSIONS.HEIGHT,
+          cursor: 'default' // Always use default cursor regardless of dice state
         }}
         frameloop="demand" // Set to 'demand' for more efficient updates
         camera={{
